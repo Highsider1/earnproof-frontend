@@ -10,7 +10,7 @@ export default function VerifyPage() {
     <PublicShell>
       <section className={pageContainer}>
         <PageHeading
-          description="Enter a proof ID, upload a credential, or scan a QR code."
+          description="Enter a proof ID, upload a credential, or scan a QR code to verify a proof."
           title="Verify a proof"
         />
         <VerifyErrorBoundary>

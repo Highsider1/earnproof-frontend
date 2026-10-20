@@ -1,0 +1,18 @@
+{
+  "default_branch": "develop",
+  "branches": [
+    "develop",
+    "origin",
+    "security/issue-285-add-verification-purpose-declaration-controls"
+  ],
+  "parent": {
+    "develop": null,
+    "origin": "develop",
+    "security/issue-285-add-verification-purpose-declaration-controls": "develop"
+  },
+  "order": [
+    "develop",
+    "origin",
+    "security/issue-285-add-verification-purpose-declaration-controls"
+  ]
+}

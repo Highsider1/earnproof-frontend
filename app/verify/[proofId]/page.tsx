@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useMemo, useState } from "react";
 import Link from "next/link";
 import { PageHeading } from "@/components/common/page-heading";
 import { pageContainer } from "@/components/common/production-ui";
@@ -13,6 +13,50 @@ import { useProofStatusPolling } from "@/lib/proof-status-polling";
 import { hasProvenance } from "@/lib/proofs/provenance-chain";
 import { formatDateRange, formatMessage } from "@/lib/i18n";
 import type { VerifyProofResponse } from "@/lib/api/generated/v1";
+
+interface VerificationPurpose {
+  id: string;
+  label: string;
+  description: string;
+  disclosures: string[];
+}
+
+const APPROVED_PURPOSES: VerificationPurpose[] = [
+  {
+    id: "employment-screening",
+    label: "Employment screening",
+    description: "Confirm minimum income for a job offer.",
+    disclosures: [
+      "Qualifying payment count",
+      "Minimum income threshold",
+      "Verification period",
+      "Proof validity status"
+    ]
+  },
+  {
+    id: "rental-application",
+    label: "Rental application",
+    description: "Confirm minimum income for a lease application.",
+    disclosures: [
+      "Minimum income threshold",
+      "Verification period",
+      "Proof validity status"
+    ]
+  },
+  {
+    id: "credit-assessment",
+    label: "Credit assessment",
+    description: "Confirm minimum income for a credit assessment.",
+    disclosures: [
+      "Qualifying payment count",
+      "Minimum income threshold",
+      "Verification period",
+      "Proof validity status"
+    ]
+  }
+];
+
+const PURPOSE_CONSENT_TTL_MS: number = 15 * 60 * 1000;
 
 function ResultItem({ label, value }: { label: string; value: ReactNode }) {
   return (
@@ -46,7 +90,7 @@ const statusStyles: Record<VerifyProofResponse["status"], { bg: string; text: st
   },
   invalid: {
     bg: "bg-rose-300/10",
-    text: "text-rose-100",
+    text: "text-rose-100", 
     border: "border-rose-300/30"
   }
 };
@@ -100,6 +144,129 @@ function ErrorState({ error, onRetry }: { error: string; onRetry: () => void }) 
           Check system status
         </Link>
       </div>
+    </div>
+  );
+}
+
+function PurposeSelection(
+  {
+    purposes,
+    selectedId,
+    onSelect,
+    disabled,
+  }: {
+    purposes: VerificationPurpose[];
+    selectedId: string | null;
+    onSelect: (id: string) => void;
+    disabled?: boolean;
+  }) {
+  return (
+    <fieldset className="rounded-lg border border-white/10 bg-white/[0.04] p-6 print:hidden">
+      <legend className="text-sm font-semibold text-white">
+        Declare verification purpose
+      </legend>
+      <p className="mt-1 text-xs text-slate-400">
+        Select the approved purpose for this verification. The purpose controls which scoped
+        results are disclosed and cannot expand the disclosure beyond the approved list.
+      </p>
+      <div className="mt-4 space-2">
+        {purposes.map((purpose) => {
+          const inputId = `verification-purpose-${purpose.id}`;
+          const checked = selectedId === purpose.id;
+          return (
+            <label
+              key={purpose.id}
+              htmlFor={inputId}
+              className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 transition ${
+                checked
+                  ? "border-cyan-300/50 bg-cyan-300/10"
+                  : "border-white/10 hover:bg-white/[0.06]"
+              }`}
+            >
+              <input
+                id={inputId}
+                type="radio"
+                name="verification-purpose"
+                value={purpose.id}
+                checked={checked}
+                disabled={disabled}
+                onChange={() => onSelect(purpose.id)}
+                className="mt-1 h-4 w-4 accent-cyan-300"
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-white">{purpose.label}</span>
+                <span className="mt-0.5 block text-xs text-slate-400">{purpose.description}</span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}
+
+function DisclosurePreview(
+  {
+    purpose,
+    consentAt,
+    expiresAt,
+  }: {
+    purpose: VerificationPurpose;
+    consentAt: number;
+    expiresAt: number;
+  }) {
+  return (
+    <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/5 p-4 print:hidden">
+      <h3 className="text-sm font-semibold text-cyan-200">Disclosure preview</h3>
+      <p className="mt-1 text-xs text-slate-300">
+        Selecting <span className="font-semibold text-white">{purpose.label}</span> discloses only the following scoped results:
+      </p>
+      <ul className="mt-2 space-y-1 text-xs text-slate-300">
+        {purpose.disclosures.map((disclosure) => (
+          <li key={disclosure} className="flex items-start gap-2">
+            <span className="mt-0.5 text-cyan-300">•</span>
+            <span>{disclosure}</span>
+          </li>
+        ))}
+      </ul>
+      <dl className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+        <div>
+          <dt className="font-semibold text-slate-400">Consent recorded</dt>
+          <dd className="mt-0.5">
+            <Timestamp value={new Date(consentAt).toISOString()} />
+          </dd>
+        </div>
+        <div>
+          <dt className="font-semibold text-slate-400">Purpose consent expires</dt>
+          <dd className="mt-0.5">
+            <Timestamp value={new Date(expiresAt).toISOString()} />
+          </dd>
+        </div>
+      </dl>
+      <p className="mt-3 text-xs text-slate-400">
+        The purpose declaration is not shared with the subject and does not reveal verifier identity publicly.
+      </p>
+    </div>
+  );
+}
+
+function PurposeDenialState({
+  reason,
+  onReset,
+}: {
+  reason: string;
+  onReset: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-rose-300/30 bg-rose-300/10 p-6 print:hidden">
+      <h3 className="text-lg font-semibold text-rose-100 mb-3">Purpose declaration denied</h3>
+      <p className="text-sm text-slate-300 mb-4">{reason}</p>
+      <button
+        onClick={onReset}
+        className="inline-flex h-10 items-center justify-center rounded-lg border border-white/15 px-6 text-sm font-medium text-white transition hover:bg-white/10"
+      >
+        Choose a different purpose
+      </button>
     </div>
   );
 }
@@ -274,9 +441,44 @@ export default function VerifyProofPage({ params }: { params: { proofId: string 
   const [retryNonce, setRetryNonce] = useState(0);
   const polling = useProofStatusPolling(params.proofId, String(retryNonce));
 
+  const [selectedPurposeId, setSelectedPurposeId] = useState<string | null>(null);
+  const [consentAt, setConsentAt] = useState<number | null>(null);
+  const [denialReason, setDenialReason] = useState<string | null>(null);
+
+  const selectedPurpose = useMemo(
+    () =>
+      selectedPurposeId
+        ? APPROVED_PURPOSES.find((purpose) => purpose.id === selectedPurposeId) ?? null
+        : null,
+    [selectedPurposeId],
+  );
+
+  const purposeExpiresAt = consentAt !== null ? consentAt + PURPOSE_CONSENT_TTL_MS : null;
+  const purposeExpired = purposeExpiresAt !== null && Date.now() >= purposeExpiresAt;
+
+  const handleSelectPurpose = (id: string) => {
+    const purpose = APPROVED_PURPOSES.find((candidate) => candidate.id === id);
+    if (!purpose) {
+      setDenialReason(null);
+      return;
+    }
+    setSelectedPurposeId(purpose.id);
+    setConsentAt(Date.now());
+    setDenialReason(null);
+  };
+
+  const handleResetPurpose = () => {
+    setSelectedPurposeId(null);
+    setConsentAt(null);
+    setDenialReason(null);
+  };
+
   const handleRetry = () => setRetryNonce((n) => n + 1);
 
   const displayError = polling.error ? mapErrorMessage(polling.error) : null;
+
+  const showPurposeControls = !!polling.data && !!polling.data.credential && !!polling.data.proof;
+  const showResult = !!polling.data && !!selectedPurpose && !purposeExpired && !denialReason;
 
   return (
     <PublicShell>
@@ -295,7 +497,37 @@ export default function VerifyProofPage({ params }: { params: { proofId: string 
         )}
 
         {polling.data && (
-          <VerificationResult result={polling.data} isLive={!polling.isTerminal} />
+          <div className="space-y-6">
+            {showPurposeControls && (
+              <>
+                <PurposeSelection
+                  purposes={APPROVED_PURPOSES}
+                  selectedId={selectedPurposeId}
+                  onSelect={handleSelectPurpose}
+                />
+                {selectedPurpose && consentAt !== null && purposeExpiresAt !== null && (
+                  <DisclosurePreview
+                    purpose={selectedPurpose}
+                    consentAt={consentAt}
+                    expiresAt={purposeExpiresAt}
+                  />
+                )}
+                {selectedPurpose && purposeExpired && (
+                  <PurposeDenialState
+                    reason="Purpose consent has expired. Re-select an approved purpose to continue."
+                    onReset={handleResetPurpose}
+                  />
+                )}
+                {denialReason && (
+                  <PurposeDenialState reason={denialReason} onReset={handleResetPurpose} />
+                )}
+              </>
+            )}
+
+            {showResult && (
+              <VerificationResult result={polling.data} isLive={!polling.isTerminal} />
+            )}
+          </div>
         )}
       </div>
     </PublicShell>
